@@ -100,3 +100,25 @@ jobs:
           # Replace below with real deployment commands (e.g., kubectl, az cli, etc.)
           echo "Simulating rolling update to environment: ${{ github.ref_name }}"
 
+            notify-on-failure:
+    if: failure()
+    needs: [detect-project, build-and-test, deploy]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Email Notification
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "[ALERT] Workflow failed: ${{ github.workflow }}"
+          body: |
+            GitHub Action failed in ${{ github.repository }}
+            Workflow: ${{ github.workflow }}
+            Branch: ${{ github.ref }}
+            Commit: ${{ github.sha }}
+            URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          to: ${{ secrets.EMAIL_TO }}
+          from: ${{ secrets.EMAIL_FROM }}
+
