@@ -1,0 +1,102 @@
+name: Deploy to Test & PreProd
+
+on:
+  push:
+    branches:
+      - main      # Triggers Test deployment
+      - preprod   # Triggers Pre-Production deployment
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+
+  detect-project:
+    runs-on: ubuntu-latest
+    outputs:
+      project-type: ${{ steps.detect.outputs.type }}
+      containerized: ${{ steps.detect.outputs.container }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Detect Project Type and Containerization
+        id: detect
+        run: |
+          if [ -f "package.json" ]; then
+            echo "type=nodejs" >> $GITHUB_OUTPUT
+          elif [ -f "pom.xml" ] || [ -f "build.gradle" ]; then
+            echo "type=java" >> $GITHUB_OUTPUT
+          elif [ -f "Dockerfile" ]; then
+            echo "type=custom" >> $GITHUB_OUTPUT
+          else
+            echo "type=unknown" >> $GITHUB_OUTPUT
+          fi
+
+          if [ -f "Dockerfile" ]; then
+            echo "container=true" >> $GITHUB_OUTPUT
+          else
+            echo "container=false" >> $GITHUB_OUTPUT
+          fi
+
+  build-and-test:
+    needs: detect-project
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref == 'refs/heads/main' && 'test' || 'preprod' }}
+    env:
+      PROJECT_TYPE: ${{ needs.detect-project.outputs.project-type }}
+      CONTAINERIZED: ${{ needs.detect-project.outputs.containerized }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Load Environment Variables
+        run: |
+          cp config/${{ github.ref == 'refs/heads/main' && 'test' || 'preprod' }}/.env .env
+          cat .env
+
+      - name: Run Static Code Analysis
+        run: |
+          echo "Running static analysis..."
+
+      - name: Build Application
+        run: |
+          if [[ "${CONTAINERIZED}" == "true" ]]; then
+            docker build -t $REGISTRY/$IMAGE_NAME:latest .
+          else
+            if [[ "$PROJECT_TYPE" == "nodejs" ]]; then
+              npm install && npm run build
+            elif [[ "$PROJECT_TYPE" == "java" ]]; then
+              ./mvnw clean install
+            fi
+          fi
+
+      - name: Run Tests
+        run: |
+          echo "Running tests..."
+          if [[ "$PROJECT_TYPE" == "nodejs" ]]; then
+            npm test
+          elif [[ "$PROJECT_TYPE" == "java" ]]; then
+            ./mvnw test
+          fi
+
+      - name: Security Scan
+        run: |
+          echo "Running security scan..."
+          # Replace with trivy or snyk if available
+
+  deploy:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref == 'refs/heads/main' && 'test' || 'preprod' }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Deploy with Rolling Updates
+        run: |
+          echo "Deploying with ROLLING UPDATE strategy to ${{ github.ref_name }}..."
+          # Replace below with real deployment commands (e.g., kubectl, az cli, etc.)
+          echo "Simulating rolling update to environment: ${{ github.ref_name }}"
+
